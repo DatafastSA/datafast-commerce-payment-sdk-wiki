@@ -29,7 +29,7 @@ En Settings → Pages, selecciona GitHub Actions. El workflow `.github/workflows
 
 ## Contenido
 
-Afiliación en TenTen UAT, integración Android, APIs, pruebas, sandbox, certificación de Datafast, producción, errores públicos, referencia pública del SDK, demo, descargas y soporte. La API de afiliación tiene únicamente una sección reservada.
+Afiliación en TenTén UAT, integración Android, APIs, pruebas, sandbox, certificación de Datafast, producción, errores públicos, referencia pública del SDK, demo, descargas y soporte. La API de afiliación tiene únicamente una sección reservada.
 
 ## Productos y factory de documentación
 
@@ -38,3 +38,9 @@ Afiliación en TenTen UAT, integración Android, APIs, pruebas, sandbox, certifi
 Para agregar un producto, registra su ID, título, descripción y secciones; cada sección selecciona una plantilla de `productPageFactories` en `assets/app.js`. Se pueden reutilizar plantillas o agregar una específica. No es necesario duplicar la navegación ni el selector de ambientes. Cada producto posee afiliación, integración, APIs, pruebas, sandbox, certificación, producción, errores, referencia pública, descargas y soporte. La afiliación es el primer paso antes del SDK dentro de cada producto. Las definiciones de APIs también pertenecen al registro del producto; no existe un catálogo global compartido.
 
 Este factory pertenece al frontend de documentación, no es una nueva clase pública del SDK.
+
+## Pruebas automatizadas
+
+Requiere Node.js 20 o superior. Ejecuta `npm ci` y `npm test`. Las pruebas utilizan un DOM simulado y respuestas controladas; no consumen las APIs reales. Cubren rutas, ambientes, restricciones de producción, descargas, cifrado y transferencia del idToken entre APIs.
+
+El archivo `docs/pages.yml.example` contiene el workflow de Pages con pruebas previas al despliegue. Copia su contenido en `.github/workflows/pages.yml` desde GitHub; la credencial local no permite subir workflows.

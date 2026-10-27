@@ -15,13 +15,13 @@
 const apis = {
  login: {title:'Login', method:'POST', path:'/users/api/v1/auth/login', description:'Autentica la cuenta de servicio mediante la credencial enviada en el header x-df-key.'},
  consulta: {title:'Consulta de transacción', method:'GET', path:'/transactions/api/v1/T2P/getTransaction/{transactionId}', description:'Consulta el detalle de un cobro mediante el identificador de la transacción de Datafast en {transactionId}. La autorización utiliza el idToken obtenido en el login.'},
- void: {title:'Anulación · Void', method:'POST', path:'', description:'La ruta y el contrato de anulación están pendientes de confirmación. Puedes completar una ruta relativa y el body para probar un contrato que ya tengas.'}
+ void: {title:'Anulación · Void', method:'POST', path:'', description:'API en construcción. Disponible próximamente.'}
 };
   register({
     id: 't2p',
     title: 'Cobro con celular (T2P)',
     apis,
-    description: 'Integra el cobro sin contacto de TenTen de Datafast en Android, utilizando Cloud Commerce para la lectura de la tarjeta.',
+    description: 'Integra el cobro sin contacto de TenTén de Datafast en Android, utilizando Cloud Commerce para la lectura de la tarjeta.',
     sections: [
       {id: 'inicio', title: 'Visión general', template: 'overview'},
       {id: 'afiliacion', title: 'Afiliación y credenciales', template: 'afiliacion'},
