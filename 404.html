@@ -1,0 +1,4 @@
+<!doctype html><html lang="es"><head><meta charset="utf-8"><title>Datafast · Documentación</title><script>
+const route = location.pathname.match(/^(.*?)\/(dev|qa|uat|prod)\/?$/);
+if (route) location.replace((route[1] || '') + '/?env=' + route[2] + location.hash);
+</script></head><body><p>Esta ruta no existe. <a href="./">Volver a la documentación</a></p></body></html>
