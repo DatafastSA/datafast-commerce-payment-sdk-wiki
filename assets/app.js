@@ -425,6 +425,58 @@ function wireDownload() {
     a.click();
   });
 }
+function initializeSearch() {
+  const input = document.getElementById('wiki-search');
+  const panel = document.getElementById('search-results');
+  const links = document.getElementById('search-links');
+  const status = document.getElementById('search-status');
+  const normalize = text => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const entries = productRegistry.all().flatMap(product => product.sections.map(section => {
+    const container = document.createElement('div');
+    const api = section.api && product.apis[section.api];
+    container.innerHTML = api ? api.description + apiResponseSchema(section.api) : productPageFactories[section.template](product);
+    container.querySelectorAll('pre, .actions, .reference-members').forEach(node => node.remove());
+    return {title: section.title, product: product.title, hash: `#productos/${product.id}/${section.id}`, text: container.textContent.replace(/\s+/g, ' ').trim()};
+  }));
+  const close = () => { panel.hidden = true; input.setAttribute('aria-expanded', 'false'); };
+  function search() {
+    const query = normalize(input.value.trim());
+    links.replaceChildren();
+    if(query.length < 2) { close(); return; }
+    const words = query.split(/\s+/);
+    const results = entries.filter(entry => words.every(word => normalize(entry.title + ' ' + entry.text).includes(word)))
+      .sort((a,b) => Number(normalize(b.title).includes(query)) - Number(normalize(a.title).includes(query))).slice(0,8);
+    status.textContent = results.length ? `${results.length} resultado${results.length === 1 ? '' : 's'}` : 'No se encontraron resultados. Prueba con otra palabra.';
+    for(const entry of results) {
+      const link = document.createElement('a'); link.href = entry.hash;
+      const title = document.createElement('strong'); title.textContent = entry.title;
+      const product = document.createElement('small'); product.textContent = entry.product;
+      const summary = document.createElement('span');
+      const position = normalize(entry.text).indexOf(words[0]);
+      const start = Math.max(0, position - 35);
+      summary.textContent = (start ? '…' : '') + entry.text.slice(start,start + 140) + (entry.text.length > start + 140 ? '…' : '');
+      link.append(product, title, summary); link.addEventListener('click',close); links.append(link);
+    }
+    panel.hidden = false; input.setAttribute('aria-expanded','true');
+  }
+  input.addEventListener('input',search);
+  input.addEventListener('focus',search);
+  input.addEventListener('keydown',event => {
+    if(event.key === 'Escape') close();
+    if(event.key === 'ArrowDown' && links.firstElementChild) {event.preventDefault();links.firstElementChild.focus();}
+    if(event.key === 'Enter' && !panel.hidden && links.firstElementChild) {event.preventDefault();links.firstElementChild.click();}
+  });
+  panel.addEventListener('keydown',event => {
+    const current = document.activeElement;
+    if(event.key === 'Escape') {close();input.focus();close();}
+    if(event.key === 'ArrowDown' && current.nextElementSibling) {event.preventDefault();current.nextElementSibling.focus();}
+    if(event.key === 'ArrowUp') {event.preventDefault();(current.previousElementSibling || input).focus();}
+  });
+  document.addEventListener('click',event => {if(!event.target.closest('.wiki-search'))close();});
+  document.addEventListener('keydown',event => {if((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k'){event.preventDefault();input.focus();}});
+  window.addEventListener('hashchange',close);
+}
+initializeSearch();
 // GitHub Pages sirve rutas profundas mediante 404.html y esta normalización.
 history.replaceState({environment},'',`${siteBase}${environment}${location.hash || '#inicio'}`);
 envSelect.addEventListener('change',()=>routeToEnvironment(envSelect.value));

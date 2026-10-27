@@ -202,3 +202,17 @@ test('UAT never links to production Cloud Commerce from any product section',()=
  }
  dom.window.close();
 });
+
+test('search finds content without accents and navigates directly to a product section',async()=>{
+ const {w,d,dom}=open();const input=d.querySelector('#wiki-search');
+ input.value='afiliacion';input.dispatchEvent(new w.Event('input'));
+ assert.equal(d.querySelector('#search-results').hidden,false);
+ const link=d.querySelector('#search-links a');assert.match(link.hash,/afiliacion/);
+ link.dispatchEvent(new w.MouseEvent('click',{bubbles:true,cancelable:true}));await settle();assert.equal(d.querySelector('#search-results').hidden,true);
+ input.value='zzznothing';input.dispatchEvent(new w.Event('input'));
+ assert.match(d.querySelector('#search-status').textContent,/No se encontraron/);
+ input.value='<img onerror=alert(1)>';input.dispatchEvent(new w.Event('input'));
+ assert.equal(d.querySelector('#search-links img'),null);
+ input.value='';input.dispatchEvent(new w.Event('input'));
+ assert.equal(d.querySelector('#search-results').hidden,true);dom.window.close();
+});
