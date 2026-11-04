@@ -33,7 +33,7 @@ jobs:
       - name: Configurar credenciales AWS
         uses: aws-actions/configure-aws-credentials@v6.2.0
         with:
-          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_DEV }}:role/github-actions
+          role-to-assume: arn:aws:iam::356317836475:role/github-actions
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: commerce-wiki-${{ github.run_id }}
 
