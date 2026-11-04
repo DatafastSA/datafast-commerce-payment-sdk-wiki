@@ -1,47 +1,152 @@
-name: Publish wiki
+name: Publicar wiki en AWS
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
+      - develop
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
   id-token: write
 
 concurrency:
-  group: pages
+  group: commerce-wiki-deploy
   cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  S3_DESTINATION: s3://ci-datafast-deployments-dev/wiki/commerce
+  CLOUDFRONT_DISTRIBUTION_ID: EKQRFKMK9CAX2
+  WIKI_URL: https://api-dev.datafast.ec/commerce
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout
+      - name: Obtener código de la wiki
         uses: actions/checkout@v4
 
-      - name: Configure GitHub Pages
-        uses: actions/configure-pages@v5
+      - name: Configurar credenciales AWS
+        uses: aws-actions/configure-aws-credentials@v6.2.0
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_DEV }}:role/github-actions
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: commerce-wiki-${{ github.run_id }}
 
-      - name: Prepare site
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Instalar dependencias
         shell: bash
         run: |
           set -euo pipefail
+
+          if [[ -f package-lock.json ]]; then
+            npm ci --ignore-scripts --no-audit --no-fund
+          else
+            npm install --ignore-scripts --no-package-lock --no-audit --no-fund
+          fi
+
+      - name: Ejecutar pruebas
+        run: npm test
+
+      - name: Preparar sitio
+        shell: bash
+        run: |
+          set -euo pipefail
+
           mkdir -p _site
-          cp index.html 404.html .nojekyll _site/
+          cp index.html _site/index.html
           cp -R assets _site/assets
 
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: _site
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          path = Path("_site/index.html")
+          html = path.read_text(encoding="utf-8")
+
+          if "<base " not in html.lower():
+              html = html.replace(
+                  "<head>",
+                  '<head>\n<base href="/commerce/">',
+                  1,
+              )
+
+          if '<base href="/commerce/">' not in html:
+              raise SystemExit("Revisa el base href: debe ser /commerce/")
+
+          path.write_text(html, encoding="utf-8")
+          PY
+
+      - name: Publicar recursos en S3
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws s3 sync _site/ "$S3_DESTINATION/" \
+            --exclude "index.html" \
+            --cache-control "public,max-age=300" \
+            --only-show-errors
+
+          aws s3 cp _site/index.html "$S3_DESTINATION/index.html" \
+            --content-type "text/html; charset=utf-8" \
+            --cache-control "no-cache" \
+            --only-show-errors
+
+      - name: Invalidar caché y esperar propagación
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          INVALIDATION_ID=$(aws cloudfront create-invalidation \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --paths "/commerce" "/commerce/*" "/wiki/commerce/*" \
+            --query "Invalidation.Id" \
+            --output text)
+
+          echo "Esperando invalidación: $INVALIDATION_ID"
+
+          aws cloudfront wait invalidation-completed \
+            --distribution-id "$CLOUDFRONT_DISTRIBUTION_ID" \
+            --id "$INVALIDATION_ID"
+
+      - name: Verificar publicación
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            "$WIKI_URL" \
+            -o /tmp/wiki.html
+
+          grep -q '<base href="/commerce/">' /tmp/wiki.html
+
+          curl --fail --silent --show-error \
+            --retry 5 --retry-all-errors --retry-delay 5 \
+            "$WIKI_URL/assets/app.js" \
+            -o /tmp/wiki-app.js
+
+          cmp _site/assets/app.js /tmp/wiki-app.js
+
+      - name: Resumen de publicación
+        shell: bash
+        run: |
+          {
+            echo "## Wiki publicada"
+            echo ""
+            echo "[Abrir documentación]($WIKI_URL)"
+            echo ""
+            echo "- Archivos actualizados en S3."
+            echo "- Invalidación de CloudFront completada."
+            echo "- Página y versión de JavaScript verificadas."
+            echo ""
+            echo "**Rama:** \`$GITHUB_REF_NAME\`"
+            echo "**Commit:** \`$GITHUB_SHA\`"
+          } >> "$GITHUB_STEP_SUMMARY"
