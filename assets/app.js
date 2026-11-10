@@ -45,7 +45,7 @@ const journey = [
  ['Habilita producción', 'Después de la certificación, Datafast proporciona el acceso productivo y las credenciales correspondientes.']
 ];
 const pages = {
- inicio: () => intro('COMMERCE PAYMENT SDK', 'Tus cobros, en tu aplicación', 'Integra el flujo de cobro de TenTén de Datafast en Android. Comienza con la afiliación en UAT y avanza a producción después de la certificación.') + steps(journey) + `<div class="links"><a class="link-card" href="#afiliacion"><strong>Comenzar con la afiliación →</strong><span>El primer paso para obtener tus credenciales de UAT.</span></a><a class="link-card" href="#productos/t2p/inicio"><strong>Cobro con celular (T2P) →</strong><span>Conoce el producto e integra su flujo de cobro.</span></a></div>`,
+ inicio: () => intro('COMMERCE PAYMENT SDK', 'Tus cobros, en tu aplicación', 'Integra el flujo de cobro de TenTén de Datafast en Android. Comienza con la afiliación en UAT y avanza a producción después de la certificación.') + steps(journey) + `<div class="links"><a class="link-card" href="#afiliacion"><strong>Comenzar con la afiliación →</strong><span>El primer paso para obtener tus credenciales de UAT.</span></a><a class="link-card" href="#productos/tenten/inicio"><strong>Cobro con celular (TenTén) →</strong><span>Checkout con la UI nativa de TenTén y anulación desde el SDK.</span></a><a class="link-card" href="#productos/t2p/inicio"><strong>Cobro con celular (Cloud Commerce) →</strong><span>Conoce el producto e integra su flujo de cobro.</span></a></div>`,
  afiliacion: () => intro('PRIMEROS PASOS', 'Afiliación y credenciales', environment === 'prod' ? 'Afilia tu comercio en TenTén para operar en producción después de completar la certificación de Datafast.' : 'Antes de integrar el SDK, afilia tu comercio en la aplicación TenTén del ambiente UAT.') + (environment === 'prod' ? notice('Certificación en UAT', 'La certificación de la integración se realiza en UAT. Datafast debe aprobarla antes de habilitar las credenciales y el acceso a producción, incluso si tu comercio ya está afiliado en PROD.') : '') + `<h2>¿Qué es TenTén?</h2><p>TenTén es la aplicación de Datafast que permite a los comercios registrarse, recibir pagos con tarjetas y consultar sus ventas. La afiliación identifica al comercio; el SDK permite integrar el flujo de cobro dentro de tu propia aplicación.</p><h2>Afiliación en ${environment === 'prod' ? 'PROD' : 'UAT'}</h2><p>${environment === 'prod' ? 'Instala TenTén desde Google Play, completa la afiliación y solicita a Datafast las credenciales productivas después de la certificación.' : 'Instala TenTén UAT, completa la afiliación y solicita a Datafast las credenciales necesarias para integrar este SDK.'}</p><div class="actions">${environment === 'uat' ? external(uatDownload,'Descargar TenTén UAT','button primary') : environment === 'prod' ? external(productionDownload,'Descargar TenTén · Google Play','button primary') : ''}${external('https://tenten.datafast.com.ec/','Conocer TenTén','button secondary')}</div>` + notice('Ambiente de pruebas', 'UAT está sujeto a cambios, mantenimiento y disponibilidad de conexión con bancos y proveedores externos. Durante las pruebas pueden presentarse interrupciones o errores. Repórtalos a Datafast indicando versión, fecha, hora, pasos para reproducirlos y código recibido; no incluyas contraseñas, tokens ni datos completos de tarjetas.') + `<h2>Comercios que ya están en producción</h2><p>También debes crear el comercio en UAT. La afiliación y certificación en este ambiente validan la correcta implementación de este SDK. La afiliación productiva existente no sustituye esa certificación.</p><h2>API de afiliación</h2><p>API en construcción. Disponible próximamente.</p><h2>Afiliación productiva</h2><p>Después de la certificación de Datafast, utiliza la aplicación productiva para completar la afiliación cuando corresponda.</p>` + next('productos/t2p/inicio','Cobro con celular (T2P)'),
  android: () => intro('INTEGRACIÓN', 'SDK Android', 'Configura los AAR locales e inicializa DataFastCommerceManager con las credenciales proporcionadas por Datafast.') + `<h2>Requisitos</h2><ul><li>Android 10 (API 29) o superior.</li><li>Activity basada en AndroidX ComponentActivity.</li><li>Conexión a internet y comercio afiliado en el ambiente correspondiente.</li><li>NFC disponible y habilitado, incluida la prueba con la mock.</li></ul><h2>Dependencias locales</h2><p>Incluye el AAR release de Commerce y los AAR de Mastercard Sonic y Visa Sensory.</p><a class="button secondary" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/DataTapDemo-source.zip">Descargar proyecto demo · ZIP</a>` + code(`dependencies {
     implementation(files("libs/datafast-commerce-payment-sdk-<version>.aar"))
@@ -145,6 +145,11 @@ const productPageFactories = {
   referencia: () => pages.referencia(),
   descargas: () => pages.descargas()
 };
+// Plantillas del producto TenTén (assets/tenten.js). Cloud Commerce usa las de arriba.
+const tentenPages = () => window.DatafastTentenPages({intro, notice, code, table, steps, external, next, escapeHtml, environments, productionDownload, environment: () => environment});
+for (const name of ['overview', 'android', 'pruebas', 'sandbox', 'produccion', 'errores', 'referencia', 'descargas']) {
+  productPageFactories[`tenten-${name}`] = product => tentenPages()[name](product);
+}
 function renderProductNavigation(productId, sectionId) {
   document.getElementById('product-navigation').innerHTML = productRegistry.all().map(product =>
     `<a class="product-heading" href="#productos/${product.id}/inicio" ${product.id === productId ? 'aria-current="page"' : ''}>${escapeHtml(product.title)}</a>`
@@ -160,6 +165,12 @@ function createProductPage(productId, sectionId) {
     document.getElementById('breadcrumb-current').textContent = 'Productos';
     return;
   }
+  if(section.template === 'api' && product.apis[section.api]?.sdkOnly) {
+    // Operación del SDK (anulación con TenTén): documentación sin probador REST.
+    article.innerHTML = tentenPages().voidApi(product);
+    document.getElementById('breadcrumb-current').textContent = `${product.title} · APIs · ${product.apis[section.api].title}`;
+    return;
+  }
   if(section.template === 'api') {
     renderApi(section.api, product);
     return;
@@ -170,8 +181,10 @@ function createProductPage(productId, sectionId) {
   for(const link of article.querySelectorAll('a[href^="#"]')) {
     const target = link.getAttribute('href').slice(1);
     if(product.sections.some(item => item.id === target)) link.setAttribute('href', `#productos/${product.id}/${target}`);
+    // Las plantillas compartidas enlazan a t2p; dentro de TenTén se mantienen en TenTén.
+    else if(product.id !== 't2p' && target.startsWith('productos/t2p/')) link.setAttribute('href', `#productos/${product.id}/${target.slice('productos/t2p/'.length)}`);
   }
-  if(section.template === 'descargas') wireDownload();
+  if(section.template === 'descargas' || section.template === 'tenten-descargas') wireDownload();
 }
 function routeToEnvironment(nextEnv, replace = false) {
   if (!Object.hasOwn(environments, nextEnv)) nextEnv = 'uat';

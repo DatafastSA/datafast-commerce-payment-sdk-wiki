@@ -17,9 +17,36 @@ const apis = {
  consulta: {title:'Consulta de transacción', method:'GET', path:'/transactions/api/v1/T2P/getTransaction/{transactionId}', description:'Consulta el detalle de un cobro mediante el identificador de la transacción de Datafast en {transactionId}. La autorización utiliza el idToken obtenido en el login.'},
  void: {title:'Anulación · Void', method:'POST', path:'', description:'API en construcción. Disponible próximamente.'}
 };
+  // TenTén: mismas secciones que Cloud Commerce; las que cambian usan plantillas tenten-*.
+  register({
+    id: 'tenten',
+    title: 'Cobro con celular (TenTén)',
+    apis: {
+      login: apis.login,
+      consulta: apis.consulta,
+      void: {title:'Anulación · Void', method:'SDK', path:'', sdkOnly: true, description:'Con TenTén la anulación se realiza desde el SDK con voidTransaction(); no requiere una API REST.'}
+    },
+    description: 'Delega el checkout completo en la UI nativa de TenTén: lectura NFC, firma y resultado con la experiencia de Datafast, sin pantallas propias que mantener. Incluye anulación desde el SDK.',
+    sections: [
+      {id: 'inicio', title: 'Visión general', template: 'tenten-overview'},
+      {id: 'afiliacion', title: 'Afiliación y credenciales', template: 'afiliacion'},
+      {id: 'android', title: 'Integración Android', template: 'tenten-android'},
+      {id: 'apis/login', title: 'Login', template: 'api', api: 'login', group: 'APIs de integración'},
+      {id: 'apis/consulta', title: 'Consulta de transacción', template: 'api', api: 'consulta'},
+      {id: 'apis/void', title: 'Anulación · Void', template: 'api', api: 'void'},
+      {id: 'pruebas', title: 'Ambientes y pruebas', template: 'tenten-pruebas'},
+      {id: 'sandbox', title: 'Modo sandbox', template: 'tenten-sandbox'},
+      {id: 'certificacion', title: 'Certificación Datafast', template: 'certificacion'},
+      {id: 'produccion', title: 'Habilitación productiva', template: 'tenten-produccion'},
+      {id: 'errores', title: 'Errores y logs', template: 'tenten-errores'},
+      {id: 'referencia', title: 'Referencia pública', template: 'tenten-referencia'},
+      {id: 'descargas', title: 'Demo y descargas', template: 'tenten-descargas'},
+      {id: 'soporte', title: 'Soporte', template: 'soporte'}
+    ]
+  });
   register({
     id: 't2p',
-    title: 'Cobro con celular (T2P)',
+    title: 'Cobro con celular (Cloud Commerce)',
     apis,
     description: 'Integra el cobro sin contacto de TenTén de Datafast en Android, utilizando Cloud Commerce para la lectura de la tarjeta.',
     sections: [

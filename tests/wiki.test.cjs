@@ -11,7 +11,7 @@ function open(path='/uat#productos/t2p/apis/login') {
   w.TextEncoder=TextEncoder;w.TextDecoder=TextDecoder;
   w.fetch=()=>{throw Error('Unexpected network request');};
   w.HTMLAnchorElement.prototype.click=function(){};
-  for(const file of ['environments','products','app'])w.eval(fs.readFileSync(`assets/${file}.js`,'utf8'));
+  for(const file of ['environments','products','tenten','app'])w.eval(fs.readFileSync(`assets/${file}.js`,'utf8'));
   return {dom,w,d:w.document};
 }
 async function settle(){await new Promise(resolve=>setTimeout(resolve,30));}
