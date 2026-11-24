@@ -69,26 +69,32 @@ test('encrypted test keys decrypt only for lower environments',async()=>{
 });
 test('login applies idToken to consultation without exposing it and environment changes clear it',async()=>{
  const {w,d,dom}=open();const calls=[];
- w.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,text:async()=>JSON.stringify(calls.length===1?{idToken:'test-private-token',accessToken:'test-access',refreshToken:'test-refresh'}:{id:'trx-test'})};};
+ w.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,text:async()=>JSON.stringify(calls.length===1?{idToken:'test-private-token',accessToken:'test-access',refreshToken:'test-refresh',expiresIn:3600,apiKey:'test-session-key',createdAt:'2026-11-09T16:11:21.123',forceChangePassword:false}:{id:'trx-test'})};};
  d.querySelector('#api-secret').value='test-merchant';
+ d.querySelector('#api-email').value='usuario@comercio.com';
+ d.querySelector('#api-password').value='clave-de-prueba';
  d.querySelector('#api-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
  assert.equal(calls.length,1);assert.equal(calls[0].options.headers['x-df-key'],'test-merchant');
- assert.ok(calls[0].options.headers['x-api-key']);assert.equal(calls[0].options.body,'{}');
+ assert.equal(calls[0].options.headers['x-api-key'],undefined);
+ assert.deepEqual(JSON.parse(calls[0].options.body),{email:'usuario@comercio.com',password:'clave-de-prueba'});
  assert.ok(!d.querySelector('#response-body').textContent.includes('test-private-token'));
+ assert.ok(!d.querySelector('#response-body').textContent.includes('test-session-key'));
+ assert.ok(d.querySelector('#response-body').textContent.includes('[oculto]'));
  await navigate(w,'#productos/t2p/apis/consulta');
  assert.equal(d.querySelector('#send-request').disabled,false);
  assert.ok(d.querySelector('#api-secret').closest('[hidden]'));
  assert.ok(!d.querySelector('#article').textContent.includes('test-private-token'));
  d.querySelector('#api-path').value='/transactions/api/v1/T2P/getTransaction/trx-test';
  d.querySelector('#api-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
- assert.equal(calls[1].options.headers.Authorization,'Bearer test-private-token');
+ assert.equal(calls[1].options.headers.Authorization,'test-private-token');
+ assert.equal(calls[1].options.headers['x-api-key'],'test-session-key');
  assert.equal(calls[1].options.body,undefined);
  const select=d.querySelector('#environment');select.value='qa';select.dispatchEvent(new w.Event('change'));
  assert.equal(d.querySelector('#send-request').disabled,true);dom.window.close();
 });
 test('request destination cannot be redirected to an external origin',async()=>{
  const {w,d,dom}=open();let called=false;w.fetch=async()=>{called=true;};
- d.querySelector('#api-secret').value='test';d.querySelector('#api-path').value='https://evil.example';
+ d.querySelector('#api-secret').value='test';d.querySelector('#api-email').value='usuario@comercio.com';d.querySelector('#api-password').value='clave-de-prueba';d.querySelector('#api-path').value='https://evil.example';
  d.querySelector('#api-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
  assert.equal(called,false);assert.equal(d.querySelector('#request-error').hidden,false);dom.window.close();
 });
@@ -215,4 +221,103 @@ test('search finds content without accents and navigates directly to a product s
  assert.equal(d.querySelector('#search-links img'),null);
  input.value='';input.dispatchEvent(new w.Event('input'));
  assert.equal(d.querySelector('#search-results').hidden,true);dom.window.close();
+});
+const sessionResponse={idToken:'test-private-token',accessToken:'test-access',refreshToken:'test-refresh',expiresIn:3600,apiKey:'test-session-key',createdAt:'2026-11-09T16:11:21.123',forceChangePassword:false};
+async function signIn(w,d,calls,loginResponse=sessionResponse){
+ w.fetch=async(url,options)=>{calls.push({url,options});return {ok:true,status:200,text:async()=>JSON.stringify(calls.length===1?loginResponse:{tid:'TP001912',status:'actived'})};};
+ d.querySelector('#api-secret').value='test-merchant';
+ d.querySelector('#api-email').value='usuario@comercio.com';
+ d.querySelector('#api-password').value='clave-de-prueba';
+ d.querySelector('#api-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
+}
+test('create terminal is registered after login in every product',()=>{
+ const {w,dom}=open();
+ for(const id of ['t2p','tenten']){
+  const product=w.DatafastProducts.get(id);
+  const ids=product.sections.map(section=>section.id);
+  assert.equal(ids.indexOf('apis/terminal'),ids.indexOf('apis/login')+1,id);
+  assert.deepEqual(Object.keys(product.apis).slice(0,2),['login','terminal'],id);
+  assert.equal(product.apis.terminal.path,'/terminals/api/v1/terminals/create');
+ }
+ dom.window.close();
+});
+test('login tester asks for x-df-key, email and password and documents the contract',()=>{
+ const {d,dom}=open('/uat#productos/t2p/apis/login');
+ for(const id of ['#api-secret','#api-email','#api-password'])assert.ok(d.querySelector(id),id);
+ assert.equal(d.querySelector('#send-request').disabled,true);
+ const text=d.querySelector('#article').textContent;
+ for(const expected of ['x-df-key','Origin','forceChangePassword','CORE027','No envíes x-api-key'])assert.ok(text.includes(expected),expected);
+ assert.ok(!text.includes('mobilePhone'));assert.ok(!text.includes('Bearer'));
+ const schema=JSON.parse(d.querySelector('.api-schema code').textContent);
+ assert.deepEqual(Object.keys(schema),['idToken','accessToken','refreshToken','expiresIn','apiKey','createdAt','forceChangePassword']);
+ dom.window.close();
+});
+test('create terminal sends the session headers without Bearer, an empty body and needs confirmation',async()=>{
+ const {w,d,dom}=open();const calls=[];
+ await signIn(w,d,calls);
+ assert.equal(calls.length,1);
+ await navigate(w,'#productos/t2p/apis/terminal');
+ assert.equal(d.querySelector('#api-body').value,'{}');assert.equal(d.querySelector('#api-body').readOnly,true);
+ assert.equal(d.querySelector('#send-request').disabled,true);
+ d.querySelector('#api-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
+ assert.equal(calls.length,1);assert.equal(d.querySelector('#request-error').hidden,false);
+ const confirm=d.querySelector('#terminal-confirm');confirm.checked=true;confirm.dispatchEvent(new w.Event('change'));
+ assert.equal(d.querySelector('#send-request').disabled,false);
+ d.querySelector('#api-form').dispatchEvent(new w.Event('submit',{cancelable:true}));await settle();
+ assert.equal(calls.length,2);
+ assert.equal(calls[1].url,'https://api-uat.datafast.ec/terminals/api/v1/terminals/create');
+ assert.equal(calls[1].options.method,'POST');
+ assert.equal(calls[1].options.headers.Authorization,'test-private-token');
+ assert.equal(calls[1].options.headers['x-api-key'],'test-session-key');
+ assert.equal(calls[1].options.headers['x-df-key'],undefined);assert.equal(calls[1].options.headers.Origin,undefined);
+ assert.equal(calls[1].options.body,'{}');
+ assert.equal(confirm.checked,false);assert.equal(d.querySelector('#send-request').disabled,true);
+ dom.window.close();
+});
+test('forceChangePassword response explains why there is no session',async()=>{
+ const {w,d,dom}=open();const calls=[];
+ await signIn(w,d,calls,{...sessionResponse,idToken:'',accessToken:'',refreshToken:'',forceChangePassword:true});
+ assert.match(d.querySelector('#request-error').textContent,/cambiar la contraseña/);
+ await navigate(w,'#productos/t2p/apis/terminal');
+ assert.equal(d.querySelector('#send-request').disabled,true);
+ dom.window.close();
+});
+test('create terminal is documentation only in production',()=>{
+ for(const id of ['t2p','tenten']){
+  const {d,dom}=open(`/prod#productos/${id}/apis/terminal`);
+  assert.equal(d.querySelector('#api-form'),null);assert.equal(d.querySelector('#terminal-confirm'),null);
+  const schema=JSON.parse(d.querySelector('.api-schema code').textContent);
+  assert.deepEqual(Object.keys(schema),['tid','status']);assert.match(schema.tid,/^TP/);
+  const text=d.querySelector('#article').textContent;
+  for(const expected of ['TRML001','TRML004','TRML005','sin el prefijo Bearer','Solo documentación'])assert.ok(text.includes(expected),expected);
+  assert.ok(!text.includes('ruc:'));
+  dom.window.close();
+ }
+});
+test('affiliation explains credentials, authorized domains and how to get the TID inside each product',()=>{
+ for(const id of ['t2p','tenten']){
+  const {d,dom}=open(`/uat#productos/${id}/afiliacion`);
+  const headings=[...d.querySelectorAll('h2')].map(h=>h.textContent);
+  for(const expected of ['Credenciales de integración','Dominios autorizados','Obtén tu TID antes de integrar el SDK'])assert.ok(headings.includes(expected),expected);
+  assert.ok(d.querySelector(`a[href="#productos/${id}/apis/login"]`));
+  assert.ok(d.querySelector(`a[href="#productos/${id}/apis/terminal"]`));
+  assert.doesNotMatch(d.querySelector('#article').textContent,/TenTen|Tenten/);
+  dom.window.close();
+ }
+});
+test('Android pages and support page point to the new terminal and security guidance',()=>{
+ for(const id of ['t2p','tenten']){
+  const {d,dom}=open(`/uat#productos/${id}/android`);
+  assert.ok(d.querySelector(`a[href="#productos/${id}/apis/terminal"]`),id);
+  dom.window.close();
+ }
+ const {d,dom}=open('/uat#productos/t2p/soporte');
+ assert.ok([...d.querySelectorAll('h2')].some(h=>h.textContent==='Recomendaciones de seguridad'));
+ dom.window.close();
+});
+test('search finds the terminal contract and its error codes',()=>{
+ const {w,d,dom}=open();const input=d.querySelector('#wiki-search');
+ input.value='TRML004';input.dispatchEvent(new w.Event('input'));
+ assert.ok([...d.querySelectorAll('#search-links a')].some(link=>link.hash.endsWith('/apis/terminal')));
+ dom.window.close();
 });

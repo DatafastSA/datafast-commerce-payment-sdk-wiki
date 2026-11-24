@@ -11,6 +11,7 @@ const routeMatch = location.pathname.match(/\/(dev|qa|uat|prod)(?:\/|$)/);
 const queryEnv = new URLSearchParams(location.search).get('env');
 let environment = routeMatch?.[1] || (Object.hasOwn(environments, queryEnv) ? queryEnv : 'uat');
 let authorizationToken = '';
+let sessionApiKey = '';
 let requestController = null;
 let generation = 0;
 const article = document.getElementById('article');
@@ -44,9 +45,35 @@ const journey = [
  ['Certifica la integración con Datafast', 'Datafast revisa y certifica la correcta implementación de este SDK en UAT.'],
  ['Habilita producción', 'Después de la certificación, Datafast proporciona el acceso productivo y las credenciales correspondientes.']
 ];
+// Credenciales, dominios autorizados y obtención del TID (página Afiliación y credenciales).
+const integrationCredentials = () =>
+  '<h2>Credenciales de integración</h2><p>Datafast entrega a cada comercio un <code>x-df-key</code> por ambiente. Esta credencial identifica al comercio y se envía en el header <code>x-df-key</code> al iniciar sesión.</p>'
+  + '<p>Debes:</p><ul><li>Conservar el <code>x-df-key</code> de forma segura, solo en tu servidor.</li><li>No incluirlo en tu aplicación móvil, repositorios, código fuente, capturas, URLs ni logs.</li><li>Utilizar la credencial únicamente en el ambiente para el que fue emitida.</li><li>Informar a Datafast los dominios desde los que realizarás las solicitudes.</li><li>Solicitar a Datafast la actualización de los dominios autorizados cuando cambie alguno.</li></ul>'
+  + notice('Credenciales del login', 'El <code>x-df-key</code> autoriza a tu comercio. El login además requiere el email y la contraseña con los que ingresas a la aplicación TenTén. No envíes <code>x-api-key</code> en el login.')
+  + '<p>Si cambias la contraseña en TenTén, actualízala también en tu servidor.</p>'
+  + '<h2>Dominios autorizados</h2><p>Al solicitar tu credencial, comparte con Datafast los dominios desde los que realizarás las solicitudes. Datafast los asocia a tu <code>x-df-key</code>. Puedes registrar hasta 10.</p><p>El login debe incluir un <code>Origin</code> que sea uno de esos dominios. Los navegadores lo agregan automáticamente. Postman y los servidores deben configurarlo explícitamente.</p>'
+  + table(['Ambiente', 'Validación del Origin'], [
+    ['DEV', 'No se valida. Registrar el dominio es opcional.'],
+    ['QA', 'Registro obligatorio. Envía el <code>Origin</code> registrado, igual que en UAT y PROD.'],
+    ['UAT', 'Obligatorio. Se rechaza la solicitud si falta o no coincide.'],
+    ['PROD', 'Obligatorio. Se rechaza la solicitud si falta o no coincide.']
+  ])
+  + '<p>Si el dominio registrado es <code>https://pagos.comercio.example</code>, estos orígenes no son equivalentes:</p><ul><li><code>http://pagos.comercio.example</code></li><li><code>https://www.pagos.comercio.example</code></li><li><code>https://pagos.comercio.example:8443</code></li><li><code>https://otro.comercio.example</code></li></ul>'
+  + '<p>Consideraciones:</p><ul><li>En QA, UAT y PROD solo se aceptan dominios HTTPS. No se aceptan <code>localhost</code> ni direcciones IP.</li><li>El protocolo, el dominio y el puerto forman parte del origen. El puerto 443 es el predeterminado de HTTPS: <code>https://pagos.comercio.example:443</code> equivale a <code>https://pagos.comercio.example</code>.</li><li>Los subdominios se registran individualmente.</li><li>No incluyas rutas, parámetros, fragmentos ni credenciales en <code>Origin</code>.</li><li><code>Referer</code> no se utiliza como alternativa.</li></ul>'
+  + '<h2>Obtén tu TID antes de integrar el SDK</h2><p>El <code>tid</code> es un dato obligatorio de <code>initialize()</code>. Si todavía no lo tienes, obtenlo una sola vez por ambiente desde tu servidor:</p>'
+  + steps([
+    ['Recibe tus credenciales', 'Datafast te entrega el <code>x-df-key</code> y registra tus dominios.'],
+    ['Inicia sesión', 'Llama al <a href="#productos/t2p/apis/login">login</a> con tu <code>x-df-key</code>, el <code>Origin</code> registrado y el email y la contraseña con los que ingresas a TenTén. Guarda el <code>idToken</code> y el <code>apiKey</code> de la respuesta.'],
+    ['Crea la terminal', 'Llama a <a href="#productos/t2p/apis/terminal">crear terminal</a> con el <code>idToken</code> y el <code>apiKey</code>.'],
+    ['Usa el tid recibido', 'Envíalo en <code>initialize()</code>. Comienza con el prefijo <code>TP</code>.']
+  ])
+  + notice('Crea una terminal solo si necesitas un TID nuevo', 'Cada solicitud exitosa crea una terminal nueva. Si ya tienes un <code>tid</code>, úsalo y no repitas la solicitud.');
+// Recomendaciones para proteger las credenciales (página Soporte).
+const securityTips = () =>
+  '<h2>Recomendaciones de seguridad</h2><ul><li>Guarda el <code>x-df-key</code> y la contraseña del usuario solo en tu servidor, en un almacén de secretos.</li><li>No registres <code>x-df-key</code>, contraseñas, <code>idToken</code>, <code>refreshToken</code> ni <code>apiKey</code> en logs.</li><li>No envíes credenciales en parámetros de consulta ni en URLs.</li><li>No reintentes el login automáticamente cuando falle: varios intentos con una contraseña incorrecta pueden bloquear el acceso temporalmente.</li><li>Mantén las credenciales separadas por ambiente y no reutilices las de DEV, QA o UAT en PROD.</li><li>Informa a Datafast antes de cambiar los dominios desde los que realizas las solicitudes.</li><li>Si una credencial queda expuesta, avisa de inmediato a Datafast para que la reemplace.</li></ul>';
 const pages = {
  inicio: () => intro('COMMERCE PAYMENT SDK', 'Tus cobros, en tu aplicación', 'Integra el flujo de cobro de TenTén de Datafast en Android. Comienza con la afiliación en UAT y avanza a producción después de la certificación.') + steps(journey) + `<div class="links"><a class="link-card" href="#afiliacion"><strong>Comenzar con la afiliación →</strong><span>El primer paso para obtener tus credenciales de UAT.</span></a><a class="link-card" href="#productos/tenten/inicio"><strong>Cobro con celular (TenTén) →</strong><span>Checkout con la UI nativa de TenTén y anulación desde el SDK.</span></a><a class="link-card" href="#productos/t2p/inicio"><strong>Cobro con celular (Cloud Commerce) →</strong><span>Conoce el producto e integra su flujo de cobro.</span></a></div>`,
- afiliacion: () => intro('PRIMEROS PASOS', 'Afiliación y credenciales', environment === 'prod' ? 'Afilia tu comercio en TenTén para operar en producción después de completar la certificación de Datafast.' : 'Antes de integrar el SDK, afilia tu comercio en la aplicación TenTén del ambiente UAT.') + (environment === 'prod' ? notice('Certificación en UAT', 'La certificación de la integración se realiza en UAT. Datafast debe aprobarla antes de habilitar las credenciales y el acceso a producción, incluso si tu comercio ya está afiliado en PROD.') : '') + `<h2>¿Qué es TenTén?</h2><p>TenTén es la aplicación de Datafast que permite a los comercios registrarse, recibir pagos con tarjetas y consultar sus ventas. La afiliación identifica al comercio; el SDK permite integrar el flujo de cobro dentro de tu propia aplicación.</p><h2>Afiliación en ${environment === 'prod' ? 'PROD' : 'UAT'}</h2><p>${environment === 'prod' ? 'Instala TenTén desde Google Play, completa la afiliación y solicita a Datafast las credenciales productivas después de la certificación.' : 'Instala TenTén UAT, completa la afiliación y solicita a Datafast las credenciales necesarias para integrar este SDK.'}</p><div class="actions">${environment === 'uat' ? external(uatDownload,'Descargar TenTén UAT','button primary') : environment === 'prod' ? external(productionDownload,'Descargar TenTén · Google Play','button primary') : ''}${external('https://tenten.datafast.com.ec/','Conocer TenTén','button secondary')}</div>` + notice('Ambiente de pruebas', 'UAT está sujeto a cambios, mantenimiento y disponibilidad de conexión con bancos y proveedores externos. Durante las pruebas pueden presentarse interrupciones o errores. Repórtalos a Datafast indicando versión, fecha, hora, pasos para reproducirlos y código recibido; no incluyas contraseñas, tokens ni datos completos de tarjetas.') + `<h2>Comercios que ya están en producción</h2><p>También debes crear el comercio en UAT. La afiliación y certificación en este ambiente validan la correcta implementación de este SDK. La afiliación productiva existente no sustituye esa certificación.</p><h2>API de afiliación</h2><p>API en construcción. Disponible próximamente.</p><h2>Afiliación productiva</h2><p>Después de la certificación de Datafast, utiliza la aplicación productiva para completar la afiliación cuando corresponda.</p>` + next('productos/t2p/inicio','Cobro con celular (T2P)'),
+ afiliacion: () => intro('PRIMEROS PASOS', 'Afiliación y credenciales', environment === 'prod' ? 'Afilia tu comercio en TenTén para operar en producción después de completar la certificación de Datafast.' : 'Antes de integrar el SDK, afilia tu comercio en la aplicación TenTén del ambiente UAT.') + (environment === 'prod' ? notice('Certificación en UAT', 'La certificación de la integración se realiza en UAT. Datafast debe aprobarla antes de habilitar las credenciales y el acceso a producción, incluso si tu comercio ya está afiliado en PROD.') : '') + `<h2>¿Qué es TenTén?</h2><p>TenTén es la aplicación de Datafast que permite a los comercios registrarse, recibir pagos con tarjetas y consultar sus ventas. La afiliación identifica al comercio; el SDK permite integrar el flujo de cobro dentro de tu propia aplicación.</p><h2>Afiliación en ${environment === 'prod' ? 'PROD' : 'UAT'}</h2><p>${environment === 'prod' ? 'Instala TenTén desde Google Play, completa la afiliación y solicita a Datafast las credenciales productivas después de la certificación.' : 'Instala TenTén UAT, completa la afiliación y solicita a Datafast las credenciales necesarias para integrar este SDK.'}</p><div class="actions">${environment === 'uat' ? external(uatDownload,'Descargar TenTén UAT','button primary') : environment === 'prod' ? external(productionDownload,'Descargar TenTén · Google Play','button primary') : ''}${external('https://tenten.datafast.com.ec/','Conocer TenTén','button secondary')}</div>` + notice('Ambiente de pruebas', 'UAT está sujeto a cambios, mantenimiento y disponibilidad de conexión con bancos y proveedores externos. Durante las pruebas pueden presentarse interrupciones o errores. Repórtalos a Datafast indicando versión, fecha, hora, pasos para reproducirlos y código recibido; no incluyas contraseñas, tokens ni datos completos de tarjetas.') + `<h2>Comercios que ya están en producción</h2><p>También debes crear el comercio en UAT. La afiliación y certificación en este ambiente validan la correcta implementación de este SDK. La afiliación productiva existente no sustituye esa certificación.</p><h2>API de afiliación</h2><p>API en construcción. Disponible próximamente.</p><h2>Afiliación productiva</h2><p>Después de la certificación de Datafast, utiliza la aplicación productiva para completar la afiliación cuando corresponda.</p>` + integrationCredentials() + next('productos/t2p/inicio','Cobro con celular (T2P)'),
  android: () => intro('INTEGRACIÓN', 'SDK Android', 'Configura los AAR locales e inicializa DataFastCommerceManager con las credenciales proporcionadas por Datafast.') + `<h2>Requisitos</h2><ul><li>Android 10 (API 29) o superior.</li><li>Activity basada en AndroidX ComponentActivity.</li><li>Conexión a internet y comercio afiliado en el ambiente correspondiente.</li><li>NFC disponible y habilitado, incluida la prueba con la mock.</li></ul><h2>Dependencias locales</h2><p>Incluye el AAR release de Commerce y los AAR de Mastercard Sonic y Visa Sensory.</p><a class="button secondary" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/DataTapDemo-source.zip">Descargar proyecto demo · ZIP</a>` + code(`dependencies {
     implementation(files("libs/datafast-commerce-payment-sdk-<version>.aar"))
     implementation(files("libs/sonic-sdk-release-1.5.4.aar"))
@@ -72,7 +99,7 @@ commerceManager.initialize(
     },
     stage = StageEnum.UAT,
     debugProperties = null
-)`) + notice('Lector (TID)', 'El tid es obligatorio y debe comenzar con el prefijo TP (sin distinguir mayúsculas). Durante initialize(), al cargar la configuración del comercio, el SDK lo valida contra los lectores habilitados; si está vacío, no empieza con TP o no coincide con ningún lector del comercio, initialize() devuelve DF016 por el listener de inicialización.') + `<h2>Realizar un cobro</h2><p><code>taxableAmount</code> incluye IVA; <code>zeroAmount</code> es el monto de tarifa cero. <code>amount</code> debe ser la suma de ambos. No agregues el IVA otra vez.</p>` + code(`val request = PaymentRequest(
+)`) + notice('Lector (TID)', 'El tid es obligatorio y debe comenzar con el prefijo TP (sin distinguir mayúsculas). Durante initialize(), al cargar la configuración del comercio, el SDK lo valida contra los lectores habilitados; si está vacío, no empieza con TP o no coincide con ningún lector del comercio, initialize() devuelve DF016 por el listener de inicialización. Si aún no tienes tu tid, créalo con <a href="#productos/t2p/apis/terminal">Crear terminal</a>.') + `<h2>Realizar un cobro</h2><p><code>taxableAmount</code> incluye IVA; <code>zeroAmount</code> es el monto de tarifa cero. <code>amount</code> debe ser la suma de ambos. No agregues el IVA otra vez.</p>` + code(`val request = PaymentRequest(
     amount = BigDecimal("11.50"),
     taxableAmount = BigDecimal("11.50"),
     zeroAmount = BigDecimal("0.00")
@@ -117,7 +144,7 @@ commerceManager.charge(this, request, object : CommerceListener {
   ['DataFastPaymentErrorEnum', 'Define los códigos y mensajes de error del SDK.', []]
 ].map(([name, description, members]) => `<section class="reference-card reference-card-expanded"><h2><code>${name}</code></h2><p>${description}</p>${members.length ? `<div class="reference-members">${members.map(member => `<code>${member}</code>`).join('')}</div>` : ''}${publicReferenceDetails(name)}</section>`).join('')}</div><h2>Fecha del resultado</h2><p><code>ChargeResult.date</code> expresa milisegundos Unix. Los campos opcionales dependen de la información recibida del proveedor.</p>`,
  descargas: () => intro('RECURSOS', 'Demo y descargas', 'Descarga una versión específica del SDK e integra sus AAR en tu aplicación.') + `<div class="try-panel"><div class="try-header"><h2>Descargar AAR</h2></div><form id="download-form" class="try-form"><div class="field"><label for="artifact-version">Versión publicada</label><input id="artifact-version" required placeholder="Ej.: 1.39.54-ALPHA" pattern="[0-9]+[.][0-9]+[.][0-9]+(-ALPHA)?"><small>Ingresa una versión existente. Los ALPHA se eliminan automáticamente después de 30 días.</small></div><div class="actions"><button type="submit" class="button primary" name="variant" value="release">Descargar release</button></div><p id="download-result" class="api-note" aria-live="polite"></p></form></div>${environment === 'uat' ? '<h2>Prueba la experiencia</h2><p>Descarga la demo para conocer la experiencia de cobro.</p><div class="actions"><a class="button primary" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/DataTapDemo.apk">Descargar demo sandbox</a><a class="button secondary" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/DataTapDemo-uat.apk">Descargar demo UAT</a></div>' : ''}<h2>Demo independiente</h2><p>El proyecto de ejemplo consume los AAR locales de Commerce y los dos AAR de branding, sin depender del código fuente del SDK.</p><div class="actions"><a class="button primary" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/DataTapDemo-source.zip">Descargar proyecto demo · ZIP</a></div>` + `${environment === 'uat' ? '<h2>Cloud Commerce · UAT</h2><p>Instala Cloud Commerce MTF para realizar pruebas en UAT.</p>' + external('https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/cloud-commerce-debug-6.10.0.apk','Descargar Cloud Commerce · UAT','button primary') : environment === 'prod' ? '<h2>Cloud Commerce · Producción</h2><p>Instala la aplicación oficial para realizar cobros en producción.</p>' + external('https://play.google.com/store/apps/details?id=com.mastercard.cpos','Descargar Cloud Commerce · Google Play','button primary') : ''}<h2>Dependencias de branding</h2><div class="branding-downloads"><a class="branding-download" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/sonic-sdk-release-1.5.4.aar"><img src="assets/brand-mastercard.png" alt="Mastercard"><span><strong>Descargar Sonic</strong><small>Versión 1.5.4 · AAR</small></span></a><a class="branding-download" href="https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/visa-sensory-branding-2.3.aar"><img src="assets/brand-visa.png" alt="Visa"><span><strong>Descargar Visa Sensory</strong><small>Versión 2.3 · AAR</small></span></a></div><h2>Convención de nombres</h2>` + code(`datafast-commerce-payment-sdk-<version>.aar`),
- soporte: () => intro('AYUDA', 'Soporte de la integración', 'Reporta a Datafast los problemas encontrados para que el equipo pueda revisar tu caso.') + `<h2>Incluye en tu reporte</h2><ul><li>Ambiente y versión de la aplicación, SDK y Cloud Commerce.</li><li>Fecha y hora del incidente.</li><li>Código público y mensaje recibido.</li><li>Pasos para reproducirlo y capturas relevantes.</li><li>Identificador de transacción, si está disponible.</li></ul>` + notice('Protege la información', 'No compartas contraseñas, API keys, tokens, firmas ni datos completos de tarjetas en capturas, issues o repositorios públicos.') + `<div class="actions">${external('https://www.datafast.com.ec/','Ir a Datafast')}${external('https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/Deep-Linking-Integration-Guide-3.1.0.pdf','Documentación de Mastercard · PDF','button secondary')}</div>`
+ soporte: () => intro('AYUDA', 'Soporte de la integración', 'Reporta a Datafast los problemas encontrados para que el equipo pueda revisar tu caso.') + `<h2>Incluye en tu reporte</h2><ul><li>Ambiente y versión de la aplicación, SDK y Cloud Commerce.</li><li>Fecha y hora del incidente.</li><li>Código público y mensaje recibido.</li><li>Pasos para reproducirlo y capturas relevantes.</li><li>Identificador de transacción, si está disponible.</li></ul>` + notice('Protege la información', 'No compartas contraseñas, API keys, tokens, firmas ni datos completos de tarjetas en capturas, issues o repositorios públicos.') + securityTips() + `<div class="actions">${external('https://www.datafast.com.ec/','Ir a Datafast')}${external('https://d3qduyc2dlz2jg.cloudfront.net/datafast-commerce-payment-sdk/Deep-Linking-Integration-Guide-3.1.0.pdf','Documentación de Mastercard · PDF','button secondary')}</div>`
 };
 
 // Factory de páginas: cada producto registra sus secciones y selecciona una plantilla.
@@ -190,6 +217,7 @@ function routeToEnvironment(nextEnv, replace = false) {
   if (!Object.hasOwn(environments, nextEnv)) nextEnv = 'uat';
   requestController?.abort(); generation++;
   authorizationToken = '';
+  sessionApiKey = '';
   environment = nextEnv;
   const url = `${siteBase}${environment}${location.hash || '#inicio'}`;
   history[replace ? 'replaceState' : 'pushState']({environment}, '', url);
@@ -323,18 +351,88 @@ function apiResponseSchema(key) {
     };
     return `<section class="api-schema"><h2>Respuesta · 200 OK</h2><p class="api-note">Estructura de referencia. Los valores entre &lt; &gt; y los montos son ilustrativos. Los campos opcionales pueden contener null.</p>${code(JSON.stringify(response, null, 2))}</section>`;
   }
+  if(key === 'terminal') {
+    return `<section class="api-schema"><h2>Respuesta exitosa</h2><p class="api-note">Estructura de referencia. Los valores son ilustrativos.</p>${code(JSON.stringify({
+      tid: 'TP001912',
+      status: 'actived'
+    }, null, 2))}</section>`;
+  }
   if(key !== 'login') return '';
-  return `<section class="api-schema"><h2>Respuesta · 200 OK</h2><p class="api-note">Estructura de referencia basada en el modelo actual del SDK.</p>${code(JSON.stringify({
+  return `<section class="api-schema"><h2>Respuesta exitosa</h2><p class="api-note">Estructura de referencia. Con forceChangePassword en true, idToken, accessToken y refreshToken llegan vacíos.</p>${code(JSON.stringify({
     idToken: '<idToken>',
     accessToken: '<accessToken>',
     refreshToken: '<refreshToken>',
     expiresIn: 3600,
+    apiKey: '<apiKey>',
     createdAt: '<fecha de creación>',
-    mobilePhone: null,
-    welcomeName: null,
-    forceChangePassword: false,
-    isAllowedToTransact: null
+    forceChangePassword: false
   }, null, 2))}</section>`;
+}
+// Contrato de las APIs de integración: headers, body, campos de respuesta y errores.
+function apiReference(key) {
+  const rows = items => items.map(([name, text]) => [`<code>${name}</code>`, text]);
+  const authorizationErrors = {
+    login: [
+      ['Falta <code>x-df-key</code>', 'Solicitud no autorizada.'],
+      ['<code>x-df-key</code> inexistente o inactivo', 'Solicitud rechazada.'],
+      ['Falta <code>Origin</code> en un ambiente que lo exige', 'Solicitud rechazada.'],
+      ['<code>Origin</code> no registrado', 'Solicitud rechazada.'],
+      ['<code>Origin</code> mal formado', 'Solicitud rechazada.']
+    ],
+    terminal: [
+      ['Falta <code>Authorization</code> o el <code>idToken</code> está vencido', 'Solicitud rechazada.'],
+      ['Falta <code>x-api-key</code> o no es válido', 'Solicitud rechazada.'],
+      ['El body contiene campos', 'Solicitud rechazada con estado 400 por validación del body.']
+    ]
+  };
+  if(key === 'login') {
+    return '<h2>Headers</h2>' + table(['Header', 'Descripción'], rows([
+        ['x-df-key', 'Credencial entregada por Datafast para el ambiente.'],
+        ['Origin', 'Uno de los dominios registrados con Datafast. Es obligatorio en QA, UAT y PROD. Los navegadores lo agregan automáticamente; Postman y los servidores deben configurarlo.'],
+        ['Content-Type', '<code>application/json</code>']
+      ]))
+      + '<p>No envíes <code>x-api-key</code> en el login.</p>'
+      + '<h2>Body</h2><p>El body requiere <code>email</code> y <code>password</code>. El email debe tener un formato válido y la contraseña debe contener al menos 8 caracteres. No envíes otros campos.</p>'
+      + code(JSON.stringify({email: 'usuario@comercio.com', password: '<contraseña del usuario>'}, null, 2))
+      + '<h2>Campos de la respuesta</h2>' + table(['Campo', 'Descripción'], rows([
+        ['idToken', 'Token de sesión. Se envía en el header <code>Authorization</code> de las APIs que lo requieren.'],
+        ['accessToken', 'Token de acceso.'],
+        ['refreshToken', 'Token para renovar la sesión.'],
+        ['expiresIn', 'Vigencia de la sesión en segundos.'],
+        ['apiKey', 'Clave de acceso a las APIs de Datafast del ambiente. Se envía en el header <code>x-api-key</code> de las APIs que la requieren.'],
+        ['createdAt', 'Fecha y hora de creación de la sesión.'],
+        ['forceChangePassword', '<code>true</code> cuando debes cambiar la contraseña antes de continuar. En ese caso <code>idToken</code>, <code>accessToken</code> y <code>refreshToken</code> llegan vacíos.']
+      ]))
+      + notice('apiKey y x-df-key', 'El <code>apiKey</code> de esta respuesta es diferente del <code>x-df-key</code> entregado por Datafast. No se pueden intercambiar.')
+      + '<h2>Errores de autorización</h2>' + table(['Situación', 'Resultado'], authorizationErrors.login)
+      + '<p>Si recibes un rechazo, verifica el ambiente, el <code>x-df-key</code> y el <code>Origin</code> enviado. Si el problema continúa, repórtalo a Datafast indicando ambiente, fecha y hora, sin incluir la credencial.</p>'
+      + '<h2>Errores del login</h2>' + table(['Código', 'Descripción', 'Acción recomendada'], [
+        ['<code>CORE027</code>', 'No fue posible autenticar al usuario.', 'Verifica el email y la contraseña. Si el problema continúa, repórtalo a Datafast indicando ambiente, fecha y hora. No reintentes en bucle.']
+      ])
+      + '<p>Si envías una contraseña incorrecta varias veces seguidas, el acceso puede bloquearse temporalmente. No reintentes el login automáticamente.</p>';
+  }
+  if(key === 'terminal') {
+    return '<h2>Headers</h2>' + table(['Header', 'Descripción'], rows([
+        ['Authorization', 'El <code>idToken</code> de la respuesta del login, tal cual y sin el prefijo <code>Bearer</code>.'],
+        ['x-api-key', 'El <code>apiKey</code> de la respuesta del login.'],
+        ['Content-Type', '<code>application/json</code>']
+      ]))
+      + '<p>Esta solicitud no usa <code>x-df-key</code> ni <code>Origin</code>.</p>'
+      + '<h2>Body</h2><p>Envía un objeto JSON vacío. El comercio se identifica con tu sesión; no envíes <code>ruc</code> ni otros campos.</p>'
+      + code('{}')
+      + '<h2>Campos de la respuesta</h2>' + table(['Campo', 'Descripción'], rows([
+        ['tid', 'Identificador de la terminal. Envíalo en <code>initialize()</code>; comienza con el prefijo <code>TP</code>.'],
+        ['status', 'Estado de la terminal.']
+      ]))
+      + '<h2>Errores de autorización</h2>' + table(['Situación', 'Resultado'], authorizationErrors.terminal)
+      + '<p>Si recibes un rechazo, vuelve a iniciar sesión y verifica los headers. Si el problema continúa, repórtalo a Datafast indicando ambiente, fecha y hora, sin incluir tokens ni contraseñas.</p>'
+      + '<h2>Errores de la operación</h2>' + table(['Código', 'Descripción', 'Acción recomendada'], [
+        ['<code>TRML001</code>', 'No fue posible obtener un TID.', 'Repórtalo a Datafast indicando ambiente, fecha y hora.'],
+        ['<code>TRML004</code>', 'No se encontró un comercio para el usuario de la sesión.', 'Inicia sesión con el usuario titular del comercio y verifica que esté afiliado.'],
+        ['<code>TRML005</code>', 'El comercio no tiene un subcomercio configurado.', 'Repórtalo a Datafast indicando ambiente, fecha y hora.']
+      ]);
+  }
+  return '';
 }
 function renderApi(key, product) {
   const apiDefinitions = product.apis;
@@ -350,44 +448,53 @@ function renderApi(key, product) {
       + `<div class="api-topline"><span class="method ${api.method === 'GET' ? 'get' : ''}">${api.method}</span><code>${escapeHtml(environments.prod + (api.path || '/…'))}</code></div>`
       + `<div class="api-tabs">${Object.entries(apiDefinitions).map(([id, def]) => `<a href="#productos/${product.id}/apis/${id}" ${id === key ? 'aria-current="page"' : ''}>${def.title}</a>`).join('')}</div>`
       + apiResponseSchema(key)
+      + apiReference(key)
       + notice('Producción · Solo documentación', 'El probador de APIs está disponible únicamente en DEV, QA y UAT. No se solicitan credenciales ni se envían peticiones productivas desde esta wiki.')
       + '<button class="button primary" id="switch-to-uat" type="button">Probar en UAT →</button>';
     document.getElementById('switch-to-uat').addEventListener('click', () => routeToEnvironment('uat'));
     return;
   }
-  article.innerHTML = intro('APIS DE INTEGRACIÓN',api.title,api.description) + `<div class="api-topline"><span class="method ${api.method === 'GET' ? 'get' : ''}">${api.method}</span><code id="endpoint-label">${escapeHtml(environments[environment] + (api.path || '/…'))}</code></div><div class="api-tabs">${Object.entries(apiDefinitions).map(([id, def]) => `<a href="#productos/${product.id}/apis/${id}" ${id === key ? 'aria-current="page"' : ''}>${def.title}</a>`).join('')}</div>${!api.path ? notice('Contrato pendiente', 'No se ha precargado un endpoint ni un request inventado. Completa los campos usando el contrato proporcionado por Datafast.') : ''}<div class="try-panel"><div class="try-header"><h2>Probar esta API</h2><span class="env-badge">${environment.toUpperCase()}</span></div><form id="api-form" class="try-form"><div class="field"><label for="api-path">Ruta del endpoint</label><input id="api-path" required value="${api.path}" ${key === 'login' ? 'readonly' : ''} placeholder="/ruta/proporcionada/por/datafast" autocomplete="off" spellcheck="false"><small>Base: ${environments[environment]}</small></div><div class="field ${key !== 'login' ? 'token-field' : ''}" ${key !== 'login' ? 'hidden' : ''}><label for="api-secret">${key === 'login' ? 'Credencial · x-df-key' : 'Token · Authorization'}</label><div class="input-row"><input id="api-secret" type="password" ${key === 'login' ? 'required' : ''} autocomplete="off" spellcheck="false" placeholder="${key === 'login' ? 'Ingresa tu credencial de este ambiente' : 'Pega el token obtenido en el login'}"><button class="button secondary" type="button" id="show-secret" aria-label="Mostrar credencial" aria-pressed="false">Mostrar</button></div><small>Solo se conserva en memoria durante esta sesión. Al cambiar de ambiente se elimina el token.</small></div>${key !== 'login' ? '<p id="token-note" class="token-note"></p>' : ''}<div class="field body-editor" ${api.method === 'GET' || key === 'login' ? 'hidden' : ''}><label for="api-body">Body · application/json</label><textarea id="api-body" spellcheck="false" ${key === 'login' ? 'readonly' : ''}>{}</textarea></div><div class="field-title">Vista previa del request</div><pre class="request-preview" id="request-preview"></pre><div class="actions"><button id="send-request" type="submit" class="button primary">Enviar petición →</button><button id="copy-curl" type="button" class="button secondary">Copiar cURL</button><button id="cancel-request" type="button" class="button secondary" hidden>Cancelar</button></div><p id="request-error" class="request-error" role="alert" hidden></p><p class="api-note">Las peticiones salen directamente desde tu navegador. Si el backend no permite CORS para este sitio, puedes probar el cURL en tu terminal o Postman.</p></form><div class="response"><div class="response-bar"><strong>Respuesta</strong><span id="response-meta">Sin ejecutar</span></div><div id="response-empty" class="response-empty">La respuesta aparecerá aquí cuando envíes una petición.</div><pre id="response-body" hidden></pre></div></div>${apiResponseSchema(key)}`;
+  article.innerHTML = intro('APIS DE INTEGRACIÓN',api.title,api.description) + `<div class="api-topline"><span class="method ${api.method === 'GET' ? 'get' : ''}">${api.method}</span><code id="endpoint-label">${escapeHtml(environments[environment] + (api.path || '/…'))}</code></div><div class="api-tabs">${Object.entries(apiDefinitions).map(([id, def]) => `<a href="#productos/${product.id}/apis/${id}" ${id === key ? 'aria-current="page"' : ''}>${def.title}</a>`).join('')}</div>${!api.path ? notice('Contrato pendiente', 'No se ha precargado un endpoint ni un request inventado. Completa los campos usando el contrato proporcionado por Datafast.') : ''}${key === 'terminal' ? notice('Crea una terminal solo si necesitas un TID nuevo', 'Cada solicitud exitosa crea una terminal nueva. Si ya tienes un <code>tid</code>, úsalo y no repitas la solicitud.') : ''}<div class="try-panel"><div class="try-header"><h2>Probar esta API</h2><span class="env-badge">${environment.toUpperCase()}</span></div><form id="api-form" class="try-form"><div class="field"><label for="api-path">Ruta del endpoint</label><input id="api-path" required value="${api.path}" ${key === 'login' ? 'readonly' : ''} placeholder="/ruta/proporcionada/por/datafast" autocomplete="off" spellcheck="false"><small>Base: ${environments[environment]}</small></div><div class="field ${key !== 'login' ? 'token-field' : ''}" ${key !== 'login' ? 'hidden' : ''}><label for="api-secret">${key === 'login' ? 'Credencial · x-df-key' : 'Token · Authorization'}</label><div class="input-row"><input id="api-secret" type="password" ${key === 'login' ? 'required' : ''} autocomplete="off" spellcheck="false" placeholder="${key === 'login' ? 'Ingresa tu credencial de este ambiente' : 'Pega el token obtenido en el login'}"><button class="button secondary" type="button" id="show-secret" aria-label="Mostrar credencial" aria-pressed="false">Mostrar</button></div><small>Solo se conserva en memoria durante esta sesión. Al cambiar de ambiente se elimina el token.</small></div>${key === 'login' ? '<div class="field"><label for="api-email">Email · usuario de TenTén</label><input id="api-email" type="email" required autocomplete="off" spellcheck="false" placeholder="usuario@comercio.com"></div><div class="field"><label for="api-password">Contraseña · usuario de TenTén</label><div class="input-row"><input id="api-password" type="password" required minlength="8" autocomplete="off" spellcheck="false" placeholder="Ingresa tu contraseña"><button class="button secondary" type="button" id="show-password" aria-label="Mostrar contraseña" aria-pressed="false">Mostrar</button></div><small>Solo se conserva en memoria durante esta sesión. No se guarda.</small></div>' : ''}${key !== 'login' ? '<p id="token-note" class="token-note"></p>' : ''}${key === 'terminal' ? '<div class="field"><label for="terminal-confirm"><input id="terminal-confirm" type="checkbox"> Entiendo que se creará una terminal nueva</label></div>' : ''}<div class="field body-editor" ${api.method === 'GET' || key === 'login' ? 'hidden' : ''}><label for="api-body">Body · application/json</label><textarea id="api-body" spellcheck="false" ${key === 'login' || key === 'terminal' ? 'readonly' : ''}>{}</textarea></div><div class="field-title">Vista previa del request</div><pre class="request-preview" id="request-preview"></pre><div class="actions"><button id="send-request" type="submit" class="button primary">Enviar petición →</button><button id="copy-curl" type="button" class="button secondary">Copiar cURL</button><button id="cancel-request" type="button" class="button secondary" hidden>Cancelar</button></div><p id="request-error" class="request-error" role="alert" hidden></p><p class="api-note">Las peticiones salen directamente desde tu navegador. Si el backend no permite CORS para este sitio, puedes probar el cURL en tu terminal o Postman.</p></form><div class="response"><div class="response-bar"><strong>Respuesta</strong><span id="response-meta">Sin ejecutar</span></div><div id="response-empty" class="response-empty">La respuesta aparecerá aquí cuando envíes una petición.</div><pre id="response-body" hidden></pre></div></div>${apiResponseSchema(key)}${apiReference(key)}`;
   const form = document.getElementById('api-form');
   const pathField = document.getElementById('api-path');
   const secret = document.getElementById('api-secret');
+  const emailField = document.getElementById('api-email');
+  const passwordField = document.getElementById('api-password');
+  const terminalConfirm = document.getElementById('terminal-confirm');
   const body = document.getElementById('api-body');
   const errorBox = document.getElementById('request-error');
   if(key !== 'login') document.getElementById('token-note').textContent=authorizationToken ? 'Sesión lista. La autorización se aplica automáticamente.' : 'Inicia sesión en Login para probar esta API.';
   async function buildRequest() {
     const url = apiUrl(pathField.value.trim());
     const headers = {Accept:'application/json'};
-    const gatewayKey = await window.getDatafastTestApiKey(environment);
-    if(!gatewayKey) throw new Error('Ingresa la API key del ambiente seleccionado.');
-    headers['x-api-key']=gatewayKey;
     if(api.method !== 'GET') headers['Content-Type']='application/json';
+    let payload;
     if(key === 'login') {
       if(!secret.value.trim()) throw new Error('Ingresa la credencial x-df-key.');
+      if(!emailField.value.trim() || !passwordField.value) throw new Error('Ingresa el email y la contraseña del usuario de TenTén.');
       headers['x-df-key']=secret.value.trim();
+      payload=JSON.stringify({email:emailField.value.trim(),password:passwordField.value});
     } else {
       if(!authorizationToken) throw new Error('Primero inicia sesión en Login.');
-      headers.Authorization=/^Bearer\s/i.test(authorizationToken) ? authorizationToken : `Bearer ${authorizationToken}`;
+      if(!sessionApiKey) throw new Error('La sesión no incluyó apiKey. Vuelve a iniciar sesión en Login.');
+      // El idToken se envía tal cual, sin el prefijo Bearer.
+      headers.Authorization=authorizationToken.replace(/^Bearer\s+/i,'');
+      headers['x-api-key']=sessionApiKey;
+      payload=api.method === 'GET' ? undefined : JSON.stringify(JSON.parse(body.value));
     }
-    const payload=api.method === 'GET' ? undefined : JSON.stringify(JSON.parse(body.value));
     return {url,headers,payload};
   }
   function preview() {
     const path=pathField.value.trim();
     document.getElementById('endpoint-label').textContent=environments[environment]+(path || '/…');
-    document.getElementById('request-preview').textContent=`${api.method} ${environments[environment]}${path || '/…'}\n${api.method !== 'GET' ? 'Content-Type: application/json\n' : ''}${key === 'login' ? 'x-df-key: ••••••••' : 'Authorization: Bearer ••••••••'}${api.method !== 'GET' && key !== 'login' && body.value.trim() !== '{}' ? '\n\n'+body.value : ''}`;
-    document.getElementById('send-request').disabled=!path || (key === 'login' ? !secret.value.trim() : !authorizationToken);
+    document.getElementById('request-preview').textContent=`${api.method} ${environments[environment]}${path || '/…'}\n${api.method !== 'GET' ? 'Content-Type: application/json\n' : ''}${key === 'login' ? 'x-df-key: ••••••••' : 'Authorization: ••••••••\nx-api-key: ••••••••'}${api.method !== 'GET' && key !== 'login' && body.value.trim() !== '{}' ? '\n\n'+body.value : ''}`;
+    document.getElementById('send-request').disabled=!path || (key === 'login' ? !secret.value.trim() || !emailField.value.trim() || !passwordField.value : !authorizationToken || (key === 'terminal' && !terminalConfirm.checked));
   }
   function showError(message) {errorBox.textContent=message;errorBox.hidden=false;}
   pathField.addEventListener('input',preview);secret.addEventListener('input',preview);body.addEventListener('input',preview);
+  emailField?.addEventListener('input',preview);passwordField?.addEventListener('input',preview);terminalConfirm?.addEventListener('change',preview);
   document.getElementById('show-secret').addEventListener('click',e=>{const visible=secret.type==='password';secret.type=visible?'text':'password';e.currentTarget.textContent=visible?'Ocultar':'Mostrar';e.currentTarget.setAttribute('aria-pressed',String(visible));});
+  document.getElementById('show-password')?.addEventListener('click',e=>{const visible=passwordField.type==='password';passwordField.type=visible?'text':'password';e.currentTarget.textContent=visible?'Ocultar':'Mostrar';e.currentTarget.setAttribute('aria-pressed',String(visible));});
   document.getElementById('cancel-request').addEventListener('click',()=>requestController?.abort());
   document.getElementById('copy-curl').addEventListener('click',async e=>{
     const copyButton = e.currentTarget;
@@ -402,6 +509,7 @@ function renderApi(key, product) {
   });
   form.addEventListener('submit',async event=>{
     event.preventDefault();errorBox.hidden=true;
+    if(key === 'terminal' && !terminalConfirm.checked){showError('Confirma que se creará una terminal nueva.');return;}
     let req;try{req=await buildRequest();}catch(error){showError(error instanceof SyntaxError ? 'El body debe ser un JSON válido.' : error.message);return;}
     const current=++generation;const controller=new AbortController();requestController=controller;
     const button=document.getElementById('send-request'),cancel=document.getElementById('cancel-request');
@@ -413,8 +521,14 @@ function renderApi(key, product) {
       const elapsed=Math.round(performance.now()-started);let parsed;
       try{parsed=JSON.parse(raw);}catch{parsed=null;}
       document.getElementById('response-meta').innerHTML=`<span class="http-badge ${response.ok?'':'error'}">HTTP ${response.status}</span> · ${elapsed} ms`;
-      const output=document.getElementById('response-body');output.textContent=parsed!==null?JSON.stringify(parsed,(name,value)=> /^(idToken|accessToken|refreshToken)$/i.test(name) ? '[oculto]' : value,2):(raw || '(Sin contenido)');output.hidden=false;document.getElementById('response-empty').hidden=true;
-      if(key==='login' && response.ok && parsed){const token=parsed.idToken || parsed.data?.idToken || parsed.body?.idToken;if(typeof token==='string') authorizationToken=token;}
+      const output=document.getElementById('response-body');output.textContent=parsed!==null?JSON.stringify(parsed,(name,value)=> /^(idToken|accessToken|refreshToken|apiKey)$/i.test(name) ? '[oculto]' : value,2):(raw || '(Sin contenido)');output.hidden=false;document.getElementById('response-empty').hidden=true;
+      if(key==='login' && response.ok && parsed){
+        const token=parsed.idToken || parsed.data?.idToken || parsed.body?.idToken;
+        if(typeof token==='string') authorizationToken=token;
+        if(typeof parsed.apiKey==='string') sessionApiKey=parsed.apiKey;
+        if(parsed.forceChangePassword===true) showError('Debes cambiar la contraseña antes de continuar. La respuesta no incluye tokens.');
+      }
+      if(key==='terminal' && response.ok) terminalConfirm.checked=false;
     } catch(error) {
       if(current!==generation)return;
       document.getElementById('response-meta').textContent=error.name==='AbortError'?'Cancelada':'Sin respuesta HTTP';
@@ -449,7 +563,7 @@ function initializeSearch() {
   const entries = productRegistry.all().flatMap(product => product.sections.map(section => {
     const container = document.createElement('div');
     const api = section.api && product.apis[section.api];
-    container.innerHTML = api ? api.description + apiResponseSchema(section.api) : productPageFactories[section.template](product);
+    container.innerHTML = api ? api.description + apiReference(section.api) + apiResponseSchema(section.api) : productPageFactories[section.template](product);
     container.querySelectorAll('pre, .actions, .reference-members').forEach(node => node.remove());
     return {title: section.title, product: product.title, hash: `#productos/${product.id}/${section.id}`, text: container.textContent.replace(/\s+/g, ' ').trim()};
   }));
@@ -496,7 +610,7 @@ initializeSearch();
 history.replaceState({environment},'',`${siteBase}${environment}${location.hash || '#inicio'}`);
 envSelect.addEventListener('change',()=>routeToEnvironment(envSelect.value));
 window.addEventListener('hashchange',()=>{render();document.getElementById('sidebar').classList.remove('open');document.getElementById('menu').setAttribute('aria-expanded','false');});
-window.addEventListener('popstate',()=>{const match=location.pathname.match(/\/(dev|qa|uat|prod)(?:\/|$)/);const restored=match?.[1] || 'uat';if(restored!==environment){authorizationToken='';environment=restored;}render();});
+window.addEventListener('popstate',()=>{const match=location.pathname.match(/\/(dev|qa|uat|prod)(?:\/|$)/);const restored=match?.[1] || 'uat';if(restored!==environment){authorizationToken='';sessionApiKey='';environment=restored;}render();});
 document.getElementById('menu').addEventListener('click',e=>{const open=document.getElementById('sidebar').classList.toggle('open');e.currentTarget.setAttribute('aria-expanded',String(open));});
 render();
 })();

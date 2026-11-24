@@ -58,7 +58,7 @@ commerceManager.initialize(
     stage = StageEnum.UAT,
     debugProperties = null
 )`)
-   + notice('Lector (TID)', 'El tid es obligatorio y debe comenzar con el prefijo TP. Si está vacío, no empieza con TP o no pertenece al comercio, initialize() devuelve DF016.')
+   + notice('Lector (TID)', 'El tid es obligatorio y debe comenzar con el prefijo TP. Si está vacío, no empieza con TP o no pertenece al comercio, initialize() devuelve DF016. Si aún no tienes tu tid, créalo con <a href="#productos/tenten/apis/terminal">Crear terminal</a>.')
    + `<h2>Realizar un cobro</h2><p><code>taxableAmount</code> incluye IVA; <code>zeroAmount</code> es el monto de tarifa cero. <code>amount</code> debe ser la suma de ambos.</p>`
    + code(`val request = PaymentRequest(
     amount = BigDecimal("11.50"),

@@ -13,7 +13,8 @@
     }));
   }
 const apis = {
- login: {title:'Login', method:'POST', path:'/users/api/v1/auth/login', description:'Autentica la cuenta de servicio mediante la credencial enviada en el header x-df-key.'},
+ login: {title:'Login', method:'POST', path:'/users/api/v1/auth/login', description:'Inicia sesión con el mismo usuario con el que ingresas a la aplicación TenTén y entrega los datos de la sesión. Hazlo desde tu servidor: el x-df-key no debe viajar en tu aplicación.'},
+ terminal: {title:'Crear terminal', method:'POST', path:'/terminals/api/v1/terminals/create', description:'Crea la terminal de tu comercio y entrega el tid que debes usar en initialize(). Requiere la sesión del login. Solo el usuario titular del comercio en TenTén puede crear la terminal.'},
  consulta: {title:'Consulta de transacción', method:'GET', path:'/transactions/api/v1/T2P/getTransaction/{transactionId}', description:'Consulta el detalle de un cobro mediante el identificador de la transacción de Datafast en {transactionId}. La autorización utiliza el idToken obtenido en el login.'},
  void: {title:'Anulación · Void', method:'POST', path:'', description:'API en construcción. Disponible próximamente.'}
 };
@@ -23,6 +24,7 @@ const apis = {
     title: 'Cobro con celular (TenTén)',
     apis: {
       login: apis.login,
+      terminal: apis.terminal,
       consulta: apis.consulta,
       void: {title:'Anulación · Void', method:'SDK', path:'', sdkOnly: true, description:'Con TenTén la anulación se realiza desde el SDK con voidTransaction(); no requiere una API REST.'}
     },
@@ -32,6 +34,7 @@ const apis = {
       {id: 'afiliacion', title: 'Afiliación y credenciales', template: 'afiliacion'},
       {id: 'android', title: 'Integración Android', template: 'tenten-android'},
       {id: 'apis/login', title: 'Login', template: 'api', api: 'login', group: 'APIs de integración'},
+      {id: 'apis/terminal', title: 'Crear terminal', template: 'api', api: 'terminal'},
       {id: 'apis/consulta', title: 'Consulta de transacción', template: 'api', api: 'consulta'},
       {id: 'apis/void', title: 'Anulación · Void', template: 'api', api: 'void'},
       {id: 'pruebas', title: 'Ambientes y pruebas', template: 'tenten-pruebas'},
@@ -54,6 +57,7 @@ const apis = {
       {id: 'afiliacion', title: 'Afiliación y credenciales', template: 'afiliacion'},
       {id: 'android', title: 'Integración Android', template: 'android'},
       {id: 'apis/login', title: 'Login', template: 'api', api: 'login', group: 'APIs de integración'},
+      {id: 'apis/terminal', title: 'Crear terminal', template: 'api', api: 'terminal'},
       {id: 'apis/consulta', title: 'Consulta de transacción', template: 'api', api: 'consulta'},
       {id: 'apis/void', title: 'Anulación · Void', template: 'api', api: 'void'},
       {id: 'pruebas', title: 'Ambientes y pruebas', template: 'pruebas'},
